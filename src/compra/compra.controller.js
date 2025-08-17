@@ -769,12 +769,10 @@ export const generarFacturaPDF = async (req, res) => {
   try {
     const { noFactura } = req.params;
 
-    // Validación básica del parámetro
     if (!noFactura || typeof noFactura !== 'string') {
       return res.status(400).json({ error: "Número de factura inválido" });
     }
 
-    // Buscar la factura con todas las relaciones necesarias
     const factura = await Compra.findOne({ noFactura })
       .populate('devoto')
       .populate({
@@ -783,55 +781,42 @@ export const generarFacturaPDF = async (req, res) => {
       })
       .populate('usuario');
 
-    // Validar que la factura existe
     if (!factura) {
       return res.status(404).json({ error: "Factura no encontrada" });
     }
 
-    // Validar datos requeridos
     if (!factura.devoto || !factura.turno || !factura.usuario) {
       return res.status(400).json({ error: "Datos incompletos en la factura" });
     }
 
-    // Manejo seguro del filtrado de turnos
     const turnosFiltrados = factura.devoto?.turnos?.filter(t => {
       try {
-        // Verificar que tanto t.turnoId como factura.turno._id existan
         return t?.turnoId?.toString() === factura.turno?._id?.toString();
-      } catch (error) {
-        console.error('Error al comparar turnos:', error);
+      } catch {
         return false;
       }
     }) || [];
 
-    // Obtener contraseña de forma segura
-    const contraseña = turnosFiltrados.length > 0 
+    const contraseña = turnosFiltrados.length > 0
       ? turnosFiltrados[turnosFiltrados.length - 1]?.contraseñas || ''
       : '';
 
-    // Crear documento PDF
+    // Configuración del documento con tus medidas exactas
     const doc = new PDFDocument({
-      size: [612, 396], // Tamaño carta en puntos (8.5x11 pulgadas)
-      margin: 40,
+      size: [600, 612], // Medidas específicas solicitadas
+      margin: 20, // Márgenes reducidos para mejor uso del espacio
       layout: 'portrait',
     });
 
-    // Configurar headers de respuesta
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=Recibo_${noFactura}.pdf`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=Recibo_${noFactura}.pdf`
+    );
 
-    // Conectar el stream del PDF al response
     doc.pipe(res);
 
-    // Manejar errores en el stream
-    doc.on('error', (err) => {
-      console.error('Error en PDF stream:', err);
-      if (!res.headersSent) {
-        res.status(500).end();
-      }
-    });
-
-    // Colores del diseño
+    // Colores
     const darkGray = '#403f3f';
     const mediumGray = '#6b6a6a';
     const lightGray = '#f5f5f5';
@@ -839,113 +824,138 @@ export const generarFacturaPDF = async (req, res) => {
     // Fondo blanco
     doc.rect(0, 0, doc.page.width, doc.page.height).fill('#ffffff');
 
-    // Logo - Manejo seguro
+    // Logo (si existe)
     try {
       const rutaLogo = path.join(__dirname, 'logo_hermandad.png');
       if (fs.existsSync(rutaLogo)) {
-        doc.image(rutaLogo, 40, 30, { width: 45, height: 45 });
-      } else {
-        console.warn('Logo no encontrado en:', rutaLogo);
+        doc.image(rutaLogo, 30, 20, { width: 50, height: 50 });
       }
     } catch (imageError) {
       console.error('Error al cargar imagen:', imageError);
     }
 
-    // Nombre procesión - Manejo seguro
-    const nombreProcesion = factura.turno?.procesion?.nombre?.toUpperCase() || 'PROCESIÓN NO ESPECIFICADA';
+    // Encabezado - Nombre de la procesión
+    const nombreProcesion = factura.turno?.procesion?.nombre?.toUpperCase() || 
+                          'PROCESIÓN NO ESPECIFICADA';
+
     doc.fillColor(darkGray)
       .font('Helvetica-Bold')
-      .fontSize(15)
-      .text(nombreProcesion, 90, 40);
+      .fontSize(16)
+      .text(nombreProcesion, 90, 30, { width: doc.page.width - 120, align: 'left' });
 
-    // Línea divisoria
-    doc.moveTo(40, 85)
-      .lineTo(doc.page.width - 40, 85)
+    // Línea divisora
+    doc.moveTo(30, 80)
+      .lineTo(doc.page.width - 30, 80)
       .lineWidth(1)
       .strokeColor(lightGray)
       .stroke();
 
-    // Datos básicos - Manejo seguro de fechas
-    const infoY = 95;
+    // Información de factura
+    const infoY = 90;
     const fechaFactura = factura.createdAt ? new Date(factura.createdAt) : new Date();
-    
+
+    // Encabezados de información
     doc.fillColor(mediumGray)
       .font('Helvetica')
-      .fontSize(9)
-      .text('NÚMERO:', 40, infoY)
-      .text('FECHA:', 180, infoY)
-      .text('HORA:', 330, infoY);
+      .fontSize(10)
+      .text('NÚMERO:', 30, infoY)
+      .text('FECHA:', 230, infoY)
+      .text('HORA:', 430, infoY);
+
+    // Datos de información
+    doc.fillColor(darkGray)
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .text(factura.noFactura || 'N/A', 30, infoY + 15)
+      .text(fechaFactura.toLocaleDateString('es-GT'), 230, infoY + 15)
+      .text(
+        fechaFactura.toLocaleTimeString('es-GT', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        430,
+        infoY + 15
+      );
+
+    // Sección Devoto
+    const devotoY = infoY + 45;
+    doc.rect(30, devotoY - 10, doc.page.width - 60, 50).fill(lightGray);
+
+    const nombreCompleto = `${factura.devoto?.nombre || ''} ${
+      factura.devoto?.apellido || ''
+    }`.trim();
+
+    doc.fillColor(mediumGray)
+      .font('Helvetica')
+      .fontSize(10)
+      .text('DEVOTO', 35, devotoY - 5);
 
     doc.fillColor(darkGray)
       .font('Helvetica-Bold')
-      .text(factura.noFactura || 'N/A', 40, infoY + 15)
-      .text(fechaFactura.toLocaleDateString('es-GT'), 180, infoY + 15)
-      .text(fechaFactura.toLocaleTimeString('es-GT', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      }), 330, infoY + 15);
-
-    // Sección Devoto - Manejo seguro
-    const devotoY = infoY + 50;
-    doc.rect(40, devotoY - 10, doc.page.width - 80, 45).fill(lightGray);
-
-    doc.fillColor(mediumGray)
-      .font('Helvetica')
-      .fontSize(9)
-      .text('DEVOTO', 45, devotoY - 5);
-
-    const nombreCompleto = `${factura.devoto?.nombre || ''} ${factura.devoto?.apellido || ''}`.trim();
-    doc.fillColor(darkGray)
-      .font('Helvetica-Bold')
-      .fontSize(12)
-      .text(nombreCompleto || 'Nombre no disponible', 45, devotoY + 10);
+      .fontSize(14)
+      .text(nombreCompleto || 'Nombre no disponible', 35, devotoY + 15, {
+        width: doc.page.width - 70
+      });
 
     // Detalles de pago
-    const detailsY = devotoY + 55;
-    const colWidth = (doc.page.width - 80) / 3;
+    const detailsY = devotoY + 60;
+    const colWidth = (doc.page.width - 60) / 3;
 
+    // Encabezados de detalles
     doc.fillColor(mediumGray)
       .font('Helvetica')
-      .fontSize(9)
-      .text('CONTRASEÑA', 40, detailsY)
-      .text('TURNO', 40 + colWidth, detailsY)
-      .text('MONTO', 40 + colWidth * 2, detailsY, { align: 'right' });
+      .fontSize(10)
+      .text('CONTRASEÑA', 30, detailsY)
+      .text('TURNO', 30 + colWidth, detailsY)
+      .text('MONTO', 30 + colWidth * 2, detailsY, { align: 'right' });
 
-    doc.moveTo(40, detailsY + 15)
-      .lineTo(doc.page.width - 40, detailsY + 15)
+    // Línea divisora
+    doc.moveTo(30, detailsY + 15)
+      .lineTo(doc.page.width - 30, detailsY + 15)
       .lineWidth(0.5)
       .strokeColor(lightGray)
       .stroke();
 
+    // Datos de detalles
     doc.fillColor(darkGray)
       .font('Helvetica-Bold')
-      .fontSize(10)
-      .text(contraseña, 40, detailsY + 25)
-      .text(factura.turno?.noTurno || 'N/A', 40 + colWidth, detailsY + 25)
-      .text(`Q. ${factura.montoPagado?.toFixed(2) || '0.00'}`, 40 + colWidth * 2, detailsY + 25, { align: 'right' });
+      .fontSize(12)
+      .text(contraseña, 30, detailsY + 25, { width: colWidth })
+      .text(factura.turno?.noTurno || 'N/A', 30 + colWidth, detailsY + 25, { width: colWidth })
+      .text(
+        `Q. ${factura.montoPagado?.toFixed(2) || '0.00'}`,
+        30 + colWidth * 2,
+        detailsY + 25,
+        { width: colWidth, align: 'right' }
+      );
 
-    // Vendedor - Manejo seguro
-    const sellerY = detailsY + 60;
+    // Vendedor
+    const sellerY = detailsY + 50;
     doc.fillColor(mediumGray)
       .font('Helvetica')
-      .fontSize(8)
-      .text('ATENDIDO POR:', 40, sellerY);
+      .fontSize(9)
+      .text('ATENDIDO POR:', 30, sellerY);
 
     doc.fillColor(darkGray)
       .font('Helvetica-Bold')
-      .fontSize(10)
-      .text(factura.usuario?.nombre || 'Vendedor no especificado', 40, sellerY + 15);
+      .fontSize(11)
+      .text(factura.usuario?.nombre || 'Vendedor no especificado', 30, sellerY + 15);
 
-    // Frase al final
-    const footerY = doc.page.height - 65;
+    // Frase final (ajustada más arriba)
+    const footerY = sellerY + 60; // Posición más alta que antes
+
     doc.fillColor(mediumGray)
       .font('Times-Italic')
-      .fontSize(11)
-      .text('«Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»', 
-        40, footerY, {
-          width: doc.page.width - 80,
+      .fontSize(10)
+      .text(
+        '«Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»',
+        30,
+        footerY,
+        {
+          width: doc.page.width - 60,
           align: 'center',
-        });
+        }
+      );
 
     doc.font('Times-Roman')
       .fontSize(9)
@@ -953,15 +963,14 @@ export const generarFacturaPDF = async (req, res) => {
         align: 'center',
       });
 
-    // Finalizar documento
     doc.end();
-
   } catch (error) {
     console.error('Error al generar factura PDF:', error);
     if (!res.headersSent) {
-      res.status(500).json({ 
-        error: "Error al generar el recibo en PDF",
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      res.status(500).json({
+        error: 'Error al generar el recibo en PDF',
+        details:
+          process.env.NODE_ENV === 'development' ? error.message : undefined,
       });
     }
   }
