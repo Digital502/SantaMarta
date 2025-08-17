@@ -128,7 +128,6 @@ export const crearCompra = async (req, res) => {
     if (turno.tipoTurno === "ORDINARIO") {
       montoTotal = turno.precio || 0;
       montoPagado = turno.precio || 0;
-      estadoPago = 'PAGADO'
     }else if(turno.tipoTurno === "COMISION"){
       montoPagado = turno.precio || 0;
       montoTotal = turno.precio || 0
