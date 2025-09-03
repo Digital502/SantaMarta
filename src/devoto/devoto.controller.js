@@ -41,7 +41,7 @@ export const addDevoto = async (req, res) => {
 
     const ultimoDevotoConEsteTurno = await Devoto.findOne({
       "turnos.turnoId": turno._id,
-      "turnos.contraseñas": { $regex: `^${prefijoContraseña}\\d{4}$`, $options: 'i' }
+      "turnos.contraseñas": { $regex: `^${prefijoContraseña}\\d{3}$`, $options: 'i' }
     })
     .sort({ createdAt: -1 })
     .select('turnos');
