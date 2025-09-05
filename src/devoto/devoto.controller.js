@@ -11,78 +11,94 @@ export const addDevoto = async (req, res) => {
     const turnosProcesados = [];
 
     if (Array.isArray(data.turnos)) {
-  for (const turnoData of data.turnos) {
-    const turnoId = turnoData.uid || turnoData;
+      for (const turnoData of data.turnos) {
+        const turnoId = turnoData.uid || turnoData;
 
-    if (!mongoose.Types.ObjectId.isValid(turnoId)) continue;
+        if (!mongoose.Types.ObjectId.isValid(turnoId)) continue;
 
-    const turno = await Turno.findById(turnoId);
-    if (!turno || turno.tipoTurno !== "COMISION") continue;
+        const turno = await Turno.findById(turnoId);
+        if (!turno || turno.tipoTurno !== "COMISION") continue;
 
-    const procesion = await Procesion.findById(turno.procesion);
-    if (!procesion) continue;
+        const procesion = await Procesion.findById(turno.procesion);
+        if (!procesion) continue;
 
-    // Generar iniciales para contraseña
-    const inicialesTurno = turno.noTurno
-      .toString()
-      .split(" ")
-      .map((w) => w[0])
-      .join("")
-      .toUpperCase();
+        // 🔑 Iniciales
+        const inicialesTurno = turno.noTurno
+          .toString()
+          .split(" ")
+          .map((w) => w[0])
+          .join("")
+          .toUpperCase();
 
-    const inicialesProcesion = procesion.nombre
-      .split(' ')
-      .map(word => word[0])
-      .join('')
-      .substring(0, 3)
-      .toUpperCase();
+        const inicialesProcesion = procesion.nombre
+          .split(" ")
+          .map((word) => word[0])
+          .join("")
+          .substring(0, 3)
+          .toUpperCase();
 
-    const prefijoContraseña = `${inicialesTurno}${inicialesProcesion}`;
+        const prefijoContraseña = `${inicialesTurno}${inicialesProcesion}`;
 
-    const ultimoDevotoConEsteTurno = await Devoto.findOne({
-      "turnos.turnoId": turno._id,
-      "turnos.contraseñas": { $regex: `^${prefijoContraseña}\\d{3}$`, $options: 'i' }
-    })
-    .sort({ createdAt: -1 })
-    .select('turnos');
+        // 🔑 Buscar todas las contraseñas existentes para ese turno
+        const devotosConEsteTurno = await Devoto.find({
+          "turnos.turnoId": turno._id,
+          "turnos.contraseñas": { $regex: `^${prefijoContraseña}\\d{3}$`, $options: "i" }
+        }).select("turnos");
 
-    let siguienteNumero = 1;
+        let numerosUsados = [];
+        for (const d of devotosConEsteTurno) {
+          d.turnos
+            .filter((t) => t.turnoId.toString() === turno._id.toString())
+            .forEach((t) => {
+              const match = t.contraseñas.match(
+                new RegExp(`^${prefijoContraseña}(\\d{3})$`, "i")
+              );
+              if (match) numerosUsados.push(parseInt(match[1], 10));
+            });
+        }
 
-    if (ultimoDevotoConEsteTurno) {
-      const contraseñasTurno = ultimoDevotoConEsteTurno.turnos
-        .filter(t => t.turnoId.toString() === turno._id.toString())
-        .map(t => t.contraseñas)
-        .filter(c => c && c.match(new RegExp(`^${prefijoContraseña}(\\d{3})$`, 'i')));
+        let siguienteNumero = 1;
+        if (numerosUsados.length > 0) {
+          numerosUsados.sort((a, b) => a - b);
 
-      if (contraseñasTurno.length > 0) {
-        const numeros = contraseñasTurno.map(c => {
-          const match = c.match(new RegExp(`^${prefijoContraseña}(\\d{3})$`, 'i'));
-          return match ? parseInt(match[1], 10) : 0;
+          // Buscar el primer hueco
+          let encontrado = false;
+          for (let i = 1; i <= numerosUsados[numerosUsados.length - 1]; i++) {
+            if (!numerosUsados.includes(i)) {
+              siguienteNumero = i;
+              encontrado = true;
+              break;
+            }
+          }
+
+          // Si no había huecos, asignar el siguiente consecutivo
+          if (!encontrado) {
+            siguienteNumero = numerosUsados[numerosUsados.length - 1] + 1;
+          }
+        }
+
+        const nuevaContraseña = `${prefijoContraseña}${siguienteNumero
+          .toString()
+          .padStart(3, "0")}`;
+
+        turnosProcesados.push({
+          turnoId: turno._id,
+          estadoPago: "NO_PAGADO",
+          contraseñas: nuevaContraseña,
         });
 
-        siguienteNumero = Math.max(...numeros) + 1;
+        // ✅ Actualizar cantidades del turno
+        turno.cantidadVendida += 1;
+        turno.cantidadSinVender = Math.max(turno.cantidad - turno.cantidadVendida, 0);
+        await turno.save();
+
+        ultimaContra = nuevaContraseña;
       }
+
+      data.turnos = turnosProcesados;
     }
 
-    const nuevaContraseña = `${prefijoContraseña}${siguienteNumero.toString().padStart(3, '0')}`;
-
-    turnosProcesados.push({
-      turnoId: turno._id,
-      estadoPago: "NO_PAGADO",
-      contraseñas: nuevaContraseña
-    });
-
-    // ✅ Actualizar cantidadVendida y cantidadSinVender
-    turno.cantidadVendida += 1;
-    turno.cantidadSinVender = Math.max(turno.cantidad - turno.cantidadVendida, 0);
-    await turno.save(); // guardar cambios
-
-    ultimaContra = nuevaContraseña;
-  }
-
-  data.turnos = turnosProcesados;
-}
-    // Elimina contraseñas separadas para evitar conflictos si llegan en el body
+    // Elimina contraseñas separadas para evitar conflictos
     delete data.contraseñas;
 
     const newDevoto = await Devoto.create(data);
