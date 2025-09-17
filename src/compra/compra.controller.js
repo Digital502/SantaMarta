@@ -7,9 +7,12 @@ import path  from "path";
 import fs from "fs";
 import blobStream from 'blob-stream';
 import { fileURLToPath } from 'url';
+import sgMail from "@sendgrid/mail";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 export const crearCompra = async (req, res) => {
   try {
@@ -163,6 +166,55 @@ export const crearCompra = async (req, res) => {
 
     await compra.save();
 
+    const htmlFactura = `
+      <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; border:1px solid #ddd; padding:20px; border-radius:8px; background-color:#f9f9f9;">
+        
+        <!-- Logo -->
+        <div style="text-align:center; margin-bottom:20px;">
+          <img src="https://i.imgur.com/z8QVtm9.png" alt="Logo Hermandad" style="width:100px; height:auto;">
+        </div>
+
+        <!-- Encabezado principal -->
+        <h1 style="color: #403f3f; text-align:center; margin-bottom:5px;">Pago de Turno - ${
+          procesion.nombre
+        }</h1>
+        <h3 style="color:#59818B; text-align:center; margin-top:0; font-weight:normal;">
+          Hermandad de Jesús Nazareno Redentor de los Cautivos y Virgen de Dolores <br/>
+          Parroquia Santa Marta
+        </h3>
+        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+
+        <!-- Datos de la factura -->
+        <div style="background-color:#f5f5f5; padding:15px; border-radius:5px; margin-bottom:20px;">
+          <p><strong>Número de Factura:</strong> ${numeroFactura}</p>
+          <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
+          <p><strong>Turno:</strong> ${turno.noTurno}</p>
+          <p><strong>Contraseña:</strong> ${nuevaContraseña}</p>
+          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(2)}</p>
+        </div>
+
+        <!-- Frase inspiradora -->
+        <blockquote style="font-style: italic; color:#6b6a6a; text-align:center; margin:30px 0;">
+          «Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»
+        </blockquote>
+        <p style="text-align:center; font-size:12px; margin-top:0;">– San Juan María Vianney</p>
+
+        <!-- Pie de página -->
+        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+        <p style="text-align:center; font-size:12px; color:#6b6a6a;">
+          Este es un comprobante electrónico de pago. Guárdelo para su registro.
+        </p>
+      </div>
+    `;
+    if (devoto.email) {
+      await sgMail.send({
+        to: devoto.email,
+        from: "hermandadsantamartazona3@gmail.com",
+        subject: `Pago de Turno - ${procesion.nombre}`,
+        html: htmlFactura,
+      });
+    }
+
     res.status(201).json({
       compra,
       turno,
@@ -269,12 +321,9 @@ export const getFacturaById = async (req, res) => {
   }
 };
 
-
-// Editar factura (puedes actualizar sólo ciertos campos)
 export const editarFactura = async (req, res) => {
   try {
     const { id } = req.params;
-    // Ejemplo de campos que podrías actualizar (ajusta según necesidades)
     const { noFactura, fechaFactura, state } = req.body;
 
     const factura = await Compra.findById(id);
@@ -300,7 +349,6 @@ export const editarFactura = async (req, res) => {
   }
 };
 
-// Eliminar factura (soft delete: cambia estado a false)
 export const eliminarFactura = async (req, res) => {
   try {
     const { id } = req.params;
@@ -481,6 +529,55 @@ export const pagarComision = async (req, res) => {
     compra.pagos.push({ fecha: new Date(), monto: montoPagado, usuario: usuarioId });
     await compra.save();
 
+    const htmlFactura = `
+      <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; border:1px solid #ddd; padding:20px; border-radius:8px; background-color:#f9f9f9;">
+        
+        <!-- Logo -->
+        <div style="text-align:center; margin-bottom:20px;">
+          <img src="https://imgur.com/a/Z2qC84U" alt="Logo Hermandad" style="width:100px; height:auto;">
+        </div>
+
+        <!-- Encabezado principal -->
+        <h1 style="color: #403f3f; text-align:center; margin-bottom:5px;">Pago de Turno - ${
+          procesion.nombre
+        }</h1>
+        <h3 style="color:#59818B; text-align:center; margin-top:0; font-weight:normal;">
+          Hermandad de Jesús Nazareno Redentor de los Cautivos y Virgen de Dolores <br/>
+          Parroquia Santa Marta
+        </h3>
+        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+
+        <!-- Datos de la factura -->
+        <div style="background-color:#f5f5f5; padding:15px; border-radius:5px; margin-bottom:20px;">
+          <p><strong>Número de Factura:</strong> ${numeroFactura}</p>
+          <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
+          <p><strong>Turno:</strong> ${turno.noTurno}</p>
+          <p><strong>Contraseña:</strong> ${turnoDevoto.contraseñas}</p>
+          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(2)}</p>
+        </div>
+
+        <!-- Frase inspiradora -->
+        <blockquote style="font-style: italic; color:#6b6a6a; text-align:center; margin:30px 0;">
+          «Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»
+        </blockquote>
+        <p style="text-align:center; font-size:12px; margin-top:0;">– San Juan María Vianney</p>
+
+        <!-- Pie de página -->
+        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+        <p style="text-align:center; font-size:12px; color:#6b6a6a;">
+          Este es un comprobante electrónico de pago. Guárdelo para su registro.
+        </p>
+      </div>
+    `;
+    if (devoto.email) {
+      await sgMail.send({
+        to: devoto.email,
+        from: "hermandadsantamartazona3@gmail.com",
+        subject: `Pago de Turno - ${procesion.nombre}`,
+        html: htmlFactura,
+      });
+    }
+
     res.status(200).json({
       success: true,
       mensaje: `Pago registrado exitosamente`,
@@ -561,7 +658,6 @@ export const pagarOrdinario = async (req, res) => {
         usuario: usuarioId
       };
     } else {
-      // ❌ No existe esa contraseña → agregamos uno nuevo
       devoto.turnos.push({
         turnoId: turno._id,
         contraseñas: contraseña,
@@ -604,6 +700,55 @@ export const pagarOrdinario = async (req, res) => {
 
     await compra.save();
 
+    const htmlFactura = `
+      <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; border:1px solid #ddd; padding:20px; border-radius:8px; background-color:#f9f9f9;">
+        
+        <!-- Logo -->
+        <div style="text-align:center; margin-bottom:20px;">
+          <img src="https://imgur.com/a/Z2qC84U" alt="Logo Hermandad" style="width:100px; height:auto;">
+        </div>
+
+        <!-- Encabezado principal -->
+        <h1 style="color: #403f3f; text-align:center; margin-bottom:5px;">Pago de Turno - ${
+          procesion.nombre
+        }</h1>
+        <h3 style="color:#59818B; text-align:center; margin-top:0; font-weight:normal;">
+          Hermandad de Jesús Nazareno Redentor de los Cautivos y Virgen de Dolores <br/>
+          Parroquia Santa Marta
+        </h3>
+        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+
+        <!-- Datos de la factura -->
+        <div style="background-color:#f5f5f5; padding:15px; border-radius:5px; margin-bottom:20px;">
+          <p><strong>Número de Factura:</strong> ${numeroFactura}</p>
+          <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
+          <p><strong>Turno:</strong> ${turno.noTurno}</p>
+          <p><strong>Contraseña:</strong> ${turnoDevoto.contraseñas}</p>
+          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(2)}</p>
+        </div>
+
+        <!-- Frase inspiradora -->
+        <blockquote style="font-style: italic; color:#6b6a6a; text-align:center; margin:30px 0;">
+          «Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»
+        </blockquote>
+        <p style="text-align:center; font-size:12px; margin-top:0;">– San Juan María Vianney</p>
+
+        <!-- Pie de página -->
+        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+        <p style="text-align:center; font-size:12px; color:#6b6a6a;">
+          Este es un comprobante electrónico de pago. Guárdelo para su registro.
+        </p>
+      </div>
+    `;
+    if (devoto.email) {
+      await sgMail.send({
+        to: devoto.email,
+        from: "hermandadsantamartazona3@gmail.com",
+        subject: `Pago de Turno - ${procesion.nombre}`,
+        html: htmlFactura,
+      });
+    }
+
     res.status(201).json({
       success: true,
       mensaje: "Pago de turno ordinario registrado correctamente",
@@ -623,41 +768,27 @@ export const reservarTurno = async (req, res) => {
   try {
     const usuarioId = req.usuario._id;
     const { devotoId, turnoId, tipoReserva } = req.body;
-
-    // 1️⃣ Validar tipo de reserva
     if (!["COMPLETO", "MEDIO"].includes(tipoReserva)) {
       return res.status(400).json({ error: "Tipo de reserva inválido" });
     }
-
-    // 2️⃣ Buscar datos
     const turno = await Turno.findById(turnoId).populate("procesion");
     if (!turno) return res.status(404).json({ error: "Turno no encontrado" });
 
     const devoto = await Devoto.findById(devotoId);
     if (!devoto) return res.status(404).json({ error: "Devoto no encontrado" });
-
-    // 3️⃣ Validar disponibilidad
     const cantidadNecesaria = tipoReserva === "COMPLETO" ? turno.cantidad : turno.cantidad / 2;
     if (turno.cantidadSinVender < cantidadNecesaria) {
       return res.status(400).json({ error: "No hay suficiente cantidad de turnos para reservar" });
     }
-
-    // 4️⃣ Generar contraseña con iniciales de cada palabra de la procesión + primer nombre
     const inicialesProcesion = turno.procesion.nombre
       .split(" ")
       .map(word => word[0].toUpperCase())
       .join("");
     const primerNombre = devoto.nombre.split(" ")[0].toUpperCase();
     const contraseña = `${inicialesProcesion}${primerNombre}`;
-
-    // 5️⃣ Generar número de factura
     const consecutivo = (await Compra.countDocuments()) + 1;
     const noFactura = `FAC${inicialesProcesion}${String(consecutivo).padStart(5, "0")}`;
-
-    // 6️⃣ Calcular monto a pagar
     const montoPagar = (tipoReserva === "COMPLETO" ? turno.cantidad : turno.cantidad / 2) * turno.precio;
-
-    // 7️⃣ Crear registro de compra
     const compra = new Compra({
       noFactura,
       devoto: devotoId,
@@ -669,20 +800,65 @@ export const reservarTurno = async (req, res) => {
       montoPagado: montoPagar,
       estadoPago: "PAGADO"
     });
-
-    // 8️⃣ Agregar turno al devoto
     devoto.turnos.push({
       turnoId: turno._id,
       contraseñas: contraseña,
       estadoPago: "PAGADO",
       montoPagado: montoPagar
     });
-
-    // 9️⃣ Actualizar disponibilidad del turno
     turno.cantidadSinVender -= cantidadNecesaria;
     turno.cantidadVendida = cantidadNecesaria
 
     await Promise.all([compra.save(), devoto.save(), turno.save()]);
+    
+    const htmlFactura = `
+      <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; border:1px solid #ddd; padding:20px; border-radius:8px; background-color:#f9f9f9;">
+        
+        <!-- Logo -->
+        <div style="text-align:center; margin-bottom:20px;">
+          <img src="https://imgur.com/a/Z2qC84U" alt="Logo Hermandad" style="width:100px; height:auto;">
+        </div>
+
+        <!-- Encabezado principal -->
+        <h1 style="color: #403f3f; text-align:center; margin-bottom:5px;">Pago de Turno - ${
+          turno.procesion.nombre
+        }</h1>
+        <h3 style="color:#59818B; text-align:center; margin-top:0; font-weight:normal;">
+          Hermandad de Jesús Nazareno Redentor de los Cautivos y Virgen de Dolores <br/>
+          Parroquia Santa Marta
+        </h3>
+        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+
+        <!-- Datos de la factura -->
+        <div style="background-color:#f5f5f5; padding:15px; border-radius:5px; margin-bottom:20px;">
+          <p><strong>Número de Factura:</strong> ${noFactura}</p>
+          <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
+          <p><strong>Turno:</strong> ${turno.noTurno}</p>
+          <p><strong>Contraseña:</strong> ${contraseña}</p>
+          <p><strong>Monto Pagado:</strong> Q. ${(montoPagar || 0).toFixed(2)}</p>
+        </div>
+
+        <!-- Frase inspiradora -->
+        <blockquote style="font-style: italic; color:#6b6a6a; text-align:center; margin:30px 0;">
+          «Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»
+        </blockquote>
+        <p style="text-align:center; font-size:12px; margin-top:0;">– San Juan María Vianney</p>
+
+        <!-- Pie de página -->
+        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+        <p style="text-align:center; font-size:12px; color:#6b6a6a;">
+          Este es un comprobante electrónico de pago. Guárdelo para su registro.
+        </p>
+      </div>
+    `;
+    if (devoto.email) {
+      await sgMail.send({
+        to: devoto.email,
+        from: "hermandadsantamartazona3@gmail.com",
+        subject: `Pago de Turno - ${turno.procesion.nombre}`,
+        html: htmlFactura,
+      });
+    }
 
     res.status(201).json({
       success: true,
@@ -750,6 +926,55 @@ export const registrarPago = async (req, res) => {
     };
 
     await Promise.all([compra.save(), devoto.save()]);
+
+    const htmlFactura = `
+      <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; border:1px solid #ddd; padding:20px; border-radius:8px; background-color:#f9f9f9;">
+        
+        <!-- Logo -->
+        <div style="text-align:center; margin-bottom:20px;">
+          <img src="https://imgur.com/a/Z2qC84U" alt="Logo Hermandad" style="width:100px; height:auto;">
+        </div>
+
+        <!-- Encabezado principal -->
+        <h1 style="color: #403f3f; text-align:center; margin-bottom:5px;">Pago de Turno - ${
+          procesion.nombre
+        }</h1>
+        <h3 style="color:#59818B; text-align:center; margin-top:0; font-weight:normal;">
+          Hermandad de Jesús Nazareno Redentor de los Cautivos y Virgen de Dolores <br/>
+          Parroquia Santa Marta
+        </h3>
+        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+
+        <!-- Datos de la factura -->
+        <div style="background-color:#f5f5f5; padding:15px; border-radius:5px; margin-bottom:20px;">
+          <p><strong>Número de Factura:</strong> ${numeroFactura}</p>
+          <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
+          <p><strong>Turno:</strong> ${turno.noTurno}</p>
+          <p><strong>Contraseña:</strong> ${nuevaContraseña}</p>
+          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(2)}</p>
+        </div>
+
+        <!-- Frase inspiradora -->
+        <blockquote style="font-style: italic; color:#6b6a6a; text-align:center; margin:30px 0;">
+          «Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»
+        </blockquote>
+        <p style="text-align:center; font-size:12px; margin-top:0;">– San Juan María Vianney</p>
+
+        <!-- Pie de página -->
+        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+        <p style="text-align:center; font-size:12px; color:#6b6a6a;">
+          Este es un comprobante electrónico de pago. Guárdelo para su registro.
+        </p>
+      </div>
+    `;
+    if (devoto.email) {
+      await sgMail.send({
+        to: devoto.email,
+        from: "hermandadsantamartazona3@gmail.com",
+        subject: `Pago de Turno - ${procesion.nombre}`,
+        html: htmlFactura,
+      });
+    }
 
     res.status(200).json({
       success: true,

@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/ProyectsSantaMarta/SantaMarta_Back#readme",
   "dependencies": {
+    "@sendgrid/mail": "^8.1.5",
     "argon2": "^0.43.1",
     "blob": "^0.1.0",
     "blob-stream": "^0.1.3",
