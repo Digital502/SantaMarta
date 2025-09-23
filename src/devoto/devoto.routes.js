@@ -16,5 +16,6 @@ router.delete("/deleteDevoto/:id", validateLoginRoles, deleteDevoto);
 
 router.get("/devotosByTurno/:turnoId", validateLoginRoles, getDevotosByTurno);
 
+router.get("/search/", validateLoginRoles, searchDevotos);
 
 export default router;

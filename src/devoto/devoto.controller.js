@@ -311,4 +311,35 @@ export const getDevotosByTurno = async (req, res) => {
   }
 };
 
+export const searchDevotos = async (req, res) => {
+  try {
+    const { q } = req.query;
+
+    if (!q || q.trim().length < 4) {
+      return res.status(400).json({ message: "El término de búsqueda es demasiado corto" });
+    }
+
+    const devotos = await Devoto.find({
+      state: true,
+      $or: [
+        { nombre: { $regex: q, $options: "i" } },
+        { apellido: { $regex: q, $options: "i" } },
+        { DPI: { $regex: q, $options: "i" } },
+      ],
+    })
+      .limit(20) 
+      .select("uid nombre apellido DPI"); 
+
+    return res.status(200).json({
+      message: "Resultados de búsqueda",
+      devotos,
+    });
+  } catch (err) {
+    console.error("Error en searchDevotos:", err);
+    return res.status(500).json({
+      message: "Error en búsqueda",
+      error: err.message,
+    });
+  }
+};
 
