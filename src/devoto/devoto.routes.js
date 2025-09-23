@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { validateLoginRoles } from "../middlewares/auth-validate.js";
-import { addDevoto, deleteDevoto, getDevotoById, getDevotos, getDevotosByTurno, updateDevoto } from "./devoto.controller.js";
+import { addDevoto, deleteDevoto, getDevotoById, getDevotos, getDevotosByTurno, updateDevoto, searchDevotos } from "./devoto.controller.js";
 
 const router = Router();
 
