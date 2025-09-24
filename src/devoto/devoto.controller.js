@@ -343,3 +343,54 @@ export const searchDevotos = async (req, res) => {
   }
 };
 
+export const getDevotosPaginacion = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;   
+    const limit = parseInt(req.query.limit) || 20; 
+    const skip = (page - 1) * limit;
+
+    const total = await Devoto.countDocuments({ state: true });
+
+    const devotos = await Devoto.find({ state: true })
+      .skip(skip)
+      .limit(limit)
+      .populate({
+        path: "turnos.turnoId",
+        populate: {
+          path: "procesion",
+          select: "nombre fecha descripcion"
+        }
+      })
+      .sort({ createdAt: -1 }); 
+
+    const devotosMapeados = devotos.map(devoto => {
+      const turnosCompletos = devoto.turnos.map(t => ({
+        turno: t.turnoId,
+        estadoPago: t.estadoPago,
+        contraseña: t.contraseñas,
+        procesionNombre: t.turnoId?.procesion?.nombre || "Procesión no disponible",
+        procesionFecha: t.turnoId?.procesion?.fecha || "Fecha no disponible"
+      }));
+
+      return {
+        ...devoto.toObject(),
+        turnos: turnosCompletos
+      };
+    });
+
+    return res.status(200).json({
+      message: "Devotos obtenidos correctamente",
+      devotos: devotosMapeados,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (err) {
+    console.error("Error en getDevotos:", err);
+    return res.status(500).json({
+      message: "Error al obtener devotos",
+      error: err.message,
+    });
+  }
+};

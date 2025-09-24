@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { validateLoginRoles } from "../middlewares/auth-validate.js";
-import { addDevoto, deleteDevoto, getDevotoById, getDevotos, getDevotosByTurno, updateDevoto, searchDevotos } from "./devoto.controller.js";
+import { validateLogin, validateLoginRoles } from "../middlewares/auth-validate.js";
+import { addDevoto, deleteDevoto, getDevotoById, getDevotos, getDevotosByTurno, getDevotosPaginacion, searchDevotos, updateDevoto } from "./devoto.controller.js";
 
 const router = Router();
 
@@ -17,5 +17,7 @@ router.delete("/deleteDevoto/:id", validateLoginRoles, deleteDevoto);
 router.get("/devotosByTurno/:turnoId", validateLoginRoles, getDevotosByTurno);
 
 router.get("/search/", validateLoginRoles, searchDevotos);
+
+router.get("/getDevotosPaginacion", validateLoginRoles, getDevotosPaginacion)
 
 export default router;
