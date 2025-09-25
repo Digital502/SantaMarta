@@ -343,6 +343,48 @@ export const searchDevotos = async (req, res) => {
   }
 };
 
+export const searchListDevotos = async (req, res) => {
+  try {
+    const { q, page = 1, limit = 10 } = req.query;
+
+    if (!q || q.trim().length < 3) {
+      return res.status(400).json({ message: "El término de búsqueda es muy corto" });
+    }
+
+    const skip = (page - 1) * limit;
+
+    const devotos = await Devoto.find({
+      state: true,
+      $or: [
+        { nombre: { $regex: q, $options: "i" } },
+        { apellido: { $regex: q, $options: "i" } },
+        { DPI: { $regex: q, $options: "i" } },
+      ],
+    })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .select("nombre apellido DPI");
+
+    const total = await Devoto.countDocuments({
+      state: true,
+      $or: [
+        { nombre: { $regex: q, $options: "i" } },
+        { apellido: { $regex: q, $options: "i" } },
+        { DPI: { $regex: q, $options: "i" } },
+      ],
+    });
+
+    res.json({
+      devotos,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / limit),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const getDevotosPaginacion = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;   
@@ -394,3 +436,4 @@ export const getDevotosPaginacion = async (req, res) => {
     });
   }
 };
+

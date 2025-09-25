@@ -99,7 +99,7 @@ export const crearCompra = async (req, res) => {
       for (const d of devotosMismaProcesion) {
         for (const t of d.turnos) {
           if (t?.turnoId?.toString() === turno._id.toString() && typeof t?.contraseñas === "string") {
-            const regex = new RegExp(`^${inicialesTurno}${inicialesProcesion}(\\d{4})$`);
+            const regex = new RegExp(`^${inicialesTurno}${inicialesProcesion}(\\d{3})$`);
             const match = t.contraseñas.match(regex);
             if (match) {
               numerosExistentes.push(parseInt(match[1], 10));
@@ -110,7 +110,7 @@ export const crearCompra = async (req, res) => {
 
       const ultimoNumero =
         numerosExistentes.length > 0 ? Math.max(...numerosExistentes) : 0;
-      const nuevoNumero = (ultimoNumero + 1).toString().padStart(4, "0");
+      const nuevoNumero = (ultimoNumero + 1).toString().padStart(3, "0");
 
       nuevaContraseña = `${inicialesTurno}${inicialesProcesion}${nuevoNumero}`;
     } else {

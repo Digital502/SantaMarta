@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { validateLogin, validateLoginRoles } from "../middlewares/auth-validate.js";
-import { addDevoto, deleteDevoto, getDevotoById, getDevotos, getDevotosByTurno, getDevotosPaginacion, searchDevotos, updateDevoto } from "./devoto.controller.js";
+import { addDevoto, deleteDevoto, getDevotoById, getDevotos, getDevotosByTurno, getDevotosPaginacion, searchDevotos, searchListDevotos, updateDevoto } from "./devoto.controller.js";
 
 const router = Router();
 
@@ -19,5 +19,7 @@ router.get("/devotosByTurno/:turnoId", validateLoginRoles, getDevotosByTurno);
 router.get("/search/", validateLoginRoles, searchDevotos);
 
 router.get("/getDevotosPaginacion", validateLoginRoles, getDevotosPaginacion)
+
+router.get("/search/devotos/", validateLoginRoles, searchListDevotos)
 
 export default router;
