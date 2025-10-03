@@ -293,7 +293,8 @@ export const getDevotosByTurno = async (req, res) => {
         .map(t => ({
           nombre: `${devoto.nombre} ${devoto.apellido}`,
           noTurno: t.turnoId.noTurno,
-          contraseña: t.contraseñas
+          contraseña: t.contraseñas,
+          estadoPago: t.estadoPago,
         }))
     );
 

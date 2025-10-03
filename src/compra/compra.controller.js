@@ -2,11 +2,11 @@ import Compra from "./compra.model.js";
 import Devoto from "../devoto/devoto.model.js";
 import Turno from "../turno/turno.model.js";
 import Procesion from "../procesion/procesion.model.js";
-import PDFDocument from 'pdfkit';
-import path  from "path";
+import PDFDocument from "pdfkit";
+import path from "path";
 import fs from "fs";
-import blobStream from 'blob-stream';
-import { fileURLToPath } from 'url';
+import blobStream from "blob-stream";
+import { fileURLToPath } from "url";
 import sgMail from "@sendgrid/mail";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,7 +34,7 @@ export const crearCompra = async (req, res) => {
     if (!procesion)
       return res.status(404).json({ error: "Procesión no encontrada" });
 
-    // Verificar disponibilidad y descontar
+    // Verificar disponibilidad
     if (turno.cantidadSinVender > 0) {
       turno.cantidadSinVender -= 1;
       turno.cantidadVendida += 1;
@@ -62,9 +62,8 @@ export const crearCompra = async (req, res) => {
       .toString()
       .padStart(4, "0")}`;
 
-    // === Generar contraseña asociada al turno dentro de devoto.turnos ===
+    // === Generar contraseña asociada ===
     let nuevaContraseña = "";
-
     if (turno.tipoTurno === "ORDINARIO") {
       const totalComprasOrdinario = await Compra.countDocuments({
         turno: {
@@ -75,7 +74,9 @@ export const crearCompra = async (req, res) => {
         },
       });
 
-      const nuevoNumero = (totalComprasOrdinario + 1).toString().padStart(4, "0");
+      const nuevoNumero = (totalComprasOrdinario + 1)
+        .toString()
+        .padStart(4, "0");
       nuevaContraseña = `OR${inicialesProcesion}${nuevoNumero}`;
     } else if (turno.tipoTurno === "COMISION") {
       const inicialesTurno = turno.noTurno
@@ -84,6 +85,12 @@ export const crearCompra = async (req, res) => {
         .map((w) => w[0])
         .join("")
         .toUpperCase();
+
+      const palabrasProcesion = procesion.nombre.trim().split(/\s+/);
+      const inicialesProcesion = palabrasProcesion
+        .map((w) => w.substring(0, 1).toUpperCase())
+        .slice(0, 3)
+        .join("");
 
       const turnosMismaProcesion = await Turno.find({
         procesion: procesion._id,
@@ -95,11 +102,15 @@ export const crearCompra = async (req, res) => {
       });
 
       let numerosExistentes = [];
-
       for (const d of devotosMismaProcesion) {
         for (const t of d.turnos) {
-          if (t?.turnoId?.toString() === turno._id.toString() && typeof t?.contraseñas === "string") {
-            const regex = new RegExp(`^${inicialesTurno}${inicialesProcesion}(\\d{3})$`);
+          if (
+            t?.turnoId?.toString() === turno._id.toString() &&
+            typeof t?.contraseñas === "string"
+          ) {
+            const regex = new RegExp(
+              `^${inicialesTurno}${inicialesProcesion}(\\d{3})$`
+            );
             const match = t.contraseñas.match(regex);
             if (match) {
               numerosExistentes.push(parseInt(match[1], 10));
@@ -108,11 +119,27 @@ export const crearCompra = async (req, res) => {
         }
       }
 
-      const ultimoNumero =
-        numerosExistentes.length > 0 ? Math.max(...numerosExistentes) : 0;
-      const nuevoNumero = (ultimoNumero + 1).toString().padStart(3, "0");
+      let nuevoNumero = 1;
+      if (numerosExistentes.length > 0) {
+        numerosExistentes.sort((a, b) => a - b);
+        nuevoNumero = 1;
+        for (let i = 0; i < numerosExistentes.length; i++) {
+          if (numerosExistentes[i] !== i + 1) {
+            nuevoNumero = i + 1;
+            break;
+          }
+        }
+        if (
+          nuevoNumero <= numerosExistentes.length &&
+          numerosExistentes.includes(nuevoNumero)
+        ) {
+          nuevoNumero = numerosExistentes[numerosExistentes.length - 1] + 1;
+        }
+      }
 
-      nuevaContraseña = `${inicialesTurno}${inicialesProcesion}${nuevoNumero}`;
+      const numeroFormateado = nuevoNumero.toString().padStart(3, "0");
+
+      nuevaContraseña = `${inicialesTurno}${inicialesProcesion}${numeroFormateado}`;
     } else {
       return res.status(400).json({
         error: "Tipo de turno no reconocido. Debe ser ORDINARIO o COMISION.",
@@ -121,35 +148,12 @@ export const crearCompra = async (req, res) => {
 
     if (!Array.isArray(devoto.turnos)) devoto.turnos = [];
 
-    const indexTurno = devoto.turnos.findIndex(
-      (t) => t.turnoId.toString() === turno._id.toString()
-    );
-
-    let montoTotal = 0;
-    let montoPagado = 0;
-
-    if (turno.tipoTurno === "ORDINARIO") {
-      montoTotal = turno.precio || 0;
-      montoPagado = turno.precio || 0;
-    }else if(turno.tipoTurno === "COMISION"){
-      montoPagado = turno.precio || 0;
-      montoTotal = turno.precio || 0
-    }
-
-    if (indexTurno !== -1) {
-      devoto.turnos.push({
-        turnoId: turno._id,
-        contraseñas: nuevaContraseña,
-        montoPagado
-      });
-    } else {
-      devoto.turnos.push({
-        turnoId: turno._id,
-        contraseñas: nuevaContraseña,
-        estadoPago: "PAGADO",
-        montoPagado
-      });
-    }
+    devoto.turnos.push({
+      turnoId: turno._id,
+      contraseñas: nuevaContraseña,
+      estadoPago: "PAGADO",
+      montoPagado: turno.precio || 0,
+    });
 
     await devoto.save();
 
@@ -159,57 +163,57 @@ export const crearCompra = async (req, res) => {
       turno: turnoId,
       usuario: usuarioId,
       contraseña: nuevaContraseña,
-      montoTotal,
-      montoPagado,
-      estadoPago: 'PAGADO'
+      montoTotal: turno.precio || 0,
+      montoPagado: turno.precio || 0,
+      estadoPago: "PAGADO",
     });
 
     await compra.save();
 
     const htmlFactura = `
-      <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; border:1px solid #ddd; padding:20px; border-radius:8px; background-color:#f9f9f9;">
-        
-        <!-- Logo -->
-        <div style="text-align:center; margin-bottom:20px;">
-          <img src="https://i.imgur.com/z8QVtm9.png" alt="Logo Hermandad" style="width:100px; height:auto;">
-        </div>
+  <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; border:1px solid #ddd; padding:20px; border-radius:8px; background-color:#f9f9f9;">
+    
+    <!-- Logo -->
+    <div style="text-align:center; margin-bottom:20px;">
+      <img src="https://i.imgur.com/z8QVtm9.png" alt="Logo Hermandad" style="width:100px; height:auto;">
+    </div>
 
-        <!-- Encabezado principal -->
-        <h1 style="color: #403f3f; text-align:center; margin-bottom:5px;">Pago de Turno - ${
-          procesion.nombre
-        }</h1>
-        <h3 style="color:#59818B; text-align:center; margin-top:0; font-weight:normal;">
-          Hermandad de Jesús Nazareno Redentor de los Cautivos y Virgen de Dolores <br/>
-          Parroquia Santa Marta
-        </h3>
-        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+    <!-- Encabezado principal -->
+    <h1 style="color: #403f3f; text-align:center; margin-bottom:5px;">Pago de Turno - ${
+      procesion.nombre
+    }</h1>
+    <h3 style="color:#59818B; text-align:center; margin-top:0; font-weight:normal;">
+      Hermandad de Jesús Nazareno Redentor de los Cautivos y Virgen de Dolores <br/>
+      Parroquia Santa Marta
+    </h3>
+    <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
 
-        <!-- Datos de la factura -->
-        <div style="background-color:#f5f5f5; padding:15px; border-radius:5px; margin-bottom:20px;">
-          <p><strong>Número de Factura:</strong> ${numeroFactura}</p>
-          <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
-          <p><strong>Turno:</strong> ${turno.noTurno}</p>
-          <p><strong>Contraseña:</strong> ${nuevaContraseña}</p>
-          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(2)}</p>
-        </div>
+    <!-- Datos de la factura -->
+    <div style="background-color:#f5f5f5; padding:15px; border-radius:5px; margin-bottom:20px;">
+      <p><strong>Número de Factura:</strong> ${numeroFactura}</p>
+      <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
+      <p><strong>Turno:</strong> ${turno.noTurno}</p>
+      <p><strong>Contraseña:</strong> ${nuevaContraseña}</p>
+      <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(2)}</p>
+    </div>
 
-        <!-- Frase inspiradora -->
-        <blockquote style="font-style: italic; color:#6b6a6a; text-align:center; margin:30px 0;">
-          «Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»
-        </blockquote>
-        <p style="text-align:center; font-size:12px; margin-top:0;">– San Juan María Vianney</p>
+    <!-- Frase inspiradora -->
+    <blockquote style="font-style: italic; color:#6b6a6a; text-align:center; margin:30px 0;">
+      «Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»
+    </blockquote>
+    <p style="text-align:center; font-size:12px; margin-top:0;">– San Juan María Vianney</p>
 
-        <!-- Pie de página -->
-        <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
-        <p style="text-align:center; font-size:12px; color:#6b6a6a;">
-          Este es un comprobante electrónico de pago. Guárdelo para su registro.
-        </p>
-      </div>
+    <!-- Pie de página -->
+    <hr style="border:1px solid #86AFB9; margin:20px 0;"/>
+    <p style="text-align:center; font-size:12px; color:#6b6a6a;">
+      Este es un comprobante electrónico de pago. Guárdelo para su registro.
+    </p>
+  </div>
     `;
     if (devoto.email) {
       await sgMail.send({
         to: devoto.email,
-        from: "hermandadsantamartazona3@gmail.com",
+        from: "devynngomezd47@gmail.com",
         subject: `Pago de Turno - ${procesion.nombre}`,
         html: htmlFactura,
       });
@@ -218,11 +222,13 @@ export const crearCompra = async (req, res) => {
     res.status(201).json({
       compra,
       turno,
-      mensaje:
-        "Compra creada correctamente con número de factura y contraseña generada.",
+      mensaje: "Compra creada y factura enviada al correo del devoto.",
     });
   } catch (error) {
-    console.error(error);
+    console.error(
+      "Error al enviar correo:",
+      error.response?.body || error.message || error
+    );
     res.status(500).json({ error: "Error interno del servidor" });
   }
 };
@@ -277,9 +283,10 @@ export const getFacturaById = async (req, res) => {
       return res.status(404).json({ message: "Factura no encontrada" });
     }
 
-    const contraseñaAsociada = factura.devoto?.turnos?.find(
-      (t) => t.turnoId?._id?.toString() === factura.turno?._id?.toString()
-    )?.contraseñas || "Sin contraseña";
+    const contraseñaAsociada =
+      factura.devoto?.turnos?.find(
+        (t) => t.turnoId?._id?.toString() === factura.turno?._id?.toString()
+      )?.contraseñas || "Sin contraseña";
 
     // Estructurar los datos de respuesta
     const response = {
@@ -374,7 +381,7 @@ export const eliminarFactura = async (req, res) => {
 
 export const historialVentasPorUsuario = async (req, res) => {
   try {
-    const { id } = req.params; 
+    const { id } = req.params;
 
     const historial = await Compra.find({
       usuario: id,
@@ -392,7 +399,7 @@ export const historialVentasPorUsuario = async (req, res) => {
           select: "nombre fecha",
         },
       })
-      .sort({ fechaFactura: -1 }); 
+      .sort({ fechaFactura: -1 });
 
     if (!historial || historial.length === 0) {
       return res.status(404).json({
@@ -401,7 +408,17 @@ export const historialVentasPorUsuario = async (req, res) => {
     }
 
     const respuesta = historial.map((compra) => {
-      const { uid, noFactura, fechaFactura, devoto, turno, tipoReserva, estadoPago, montoTotal, montoPagado } = compra;
+      const {
+        uid,
+        noFactura,
+        fechaFactura,
+        devoto,
+        turno,
+        tipoReserva,
+        estadoPago,
+        montoTotal,
+        montoPagado,
+      } = compra;
 
       return {
         uid,
@@ -414,7 +431,9 @@ export const historialVentasPorUsuario = async (req, res) => {
         tipoTurno: turno?.tipoTurno || "N/A",
         precio: turno?.precio || 0,
         procesion: turno?.procesion?.nombre || "N/A",
-        fechaProcesion: turno?.procesion?.fecha ? new Date(turno.procesion.fecha).toLocaleDateString() : "N/A",
+        fechaProcesion: turno?.procesion?.fecha
+          ? new Date(turno.procesion.fecha).toLocaleDateString()
+          : "N/A",
         tipoReserva: tipoReserva || "N/A",
         estadoPago: estadoPago || "NO_PAGADO",
         montoTotal: montoTotal || 0,
@@ -452,7 +471,7 @@ export const pagarComision = async (req, res) => {
     // Buscar devoto y turno
     const devoto = await Devoto.findById(devotoId).populate({
       path: "turnos.turnoId",
-      populate: { path: "procesion" }
+      populate: { path: "procesion" },
     });
     if (!devoto) return res.status(404).json({ error: "Devoto no encontrado" });
 
@@ -460,9 +479,13 @@ export const pagarComision = async (req, res) => {
     if (!turno) return res.status(404).json({ error: "Turno no encontrado" });
 
     // Buscar turno específico del devoto
-    const turnoDevoto = devoto.turnos.find(t => t.turnoId && t.turnoId._id.toString() === turnoId);
+    const turnoDevoto = devoto.turnos.find(
+      (t) => t.turnoId && t.turnoId._id.toString() === turnoId
+    );
     if (!turnoDevoto) {
-      return res.status(404).json({ error: "El devoto no tiene asignado este turno" });
+      return res
+        .status(404)
+        .json({ error: "El devoto no tiene asignado este turno" });
     }
 
     // Buscar o crear compra asociada
@@ -475,19 +498,21 @@ export const pagarComision = async (req, res) => {
         tipoReserva: turno.tipoTurno === "COMISION" ? "MEDIO" : "COMPLETO",
         montoTotal: turno.precio,
         montoPagado: 0,
-        estadoPago: "NO_PAGADO"
+        estadoPago: "NO_PAGADO",
       });
     }
 
     // === Generar número de factura ===
     const procesion = turno.procesion;
     const totalComprasProcesion = await Compra.countDocuments({
-      turno: { $in: await Turno.find({ procesion: procesion._id }).distinct("_id") }
+      turno: {
+        $in: await Turno.find({ procesion: procesion._id }).distinct("_id"),
+      },
     });
 
     const inicialesProcesion = procesion.nombre
       .split(" ")
-      .map(w => w[0])
+      .map((w) => w[0])
       .join("")
       .toUpperCase();
 
@@ -502,8 +527,10 @@ export const pagarComision = async (req, res) => {
     const saldoPendiente = turno.precio - montoAcumulado;
 
     if (montoAcumulado > turno.precio) {
-      return res.status(400).json({ 
-        error: `El monto excede el precio total. Máximo a pagar: ${saldoPendiente + montoPagado}` 
+      return res.status(400).json({
+        error: `El monto excede el precio total. Máximo a pagar: ${
+          saldoPendiente + montoPagado
+        }`,
       });
     }
 
@@ -511,7 +538,10 @@ export const pagarComision = async (req, res) => {
     let nuevoEstadoPago = "NO_PAGADO";
     if (montoAcumulado >= turno.precio) {
       nuevoEstadoPago = "PAGADO";
-    } else if (turno.tipoTurno === "COMISION" && montoAcumulado >= (turno.precio / 2)) {
+    } else if (
+      turno.tipoTurno === "COMISION" &&
+      montoAcumulado >= turno.precio / 2
+    ) {
       nuevoEstadoPago = "MITAD";
     } else {
       nuevoEstadoPago = "MITAD";
@@ -520,13 +550,21 @@ export const pagarComision = async (req, res) => {
     // Actualizar devoto
     turnoDevoto.montoPagado = montoAcumulado;
     turnoDevoto.estadoPago = nuevoEstadoPago;
-    turnoDevoto.ultimoPago = { fecha: new Date(), monto: montoPagado, usuario: usuarioId };
+    turnoDevoto.ultimoPago = {
+      fecha: new Date(),
+      monto: montoPagado,
+      usuario: usuarioId,
+    };
     await devoto.save();
 
     // Actualizar compra
     compra.montoPagado = montoAcumulado;
     compra.estadoPago = nuevoEstadoPago;
-    compra.pagos.push({ fecha: new Date(), monto: montoPagado, usuario: usuarioId });
+    compra.pagos.push({
+      fecha: new Date(),
+      monto: montoPagado,
+      usuario: usuarioId,
+    });
     await compra.save();
 
     const htmlFactura = `
@@ -553,7 +591,9 @@ export const pagarComision = async (req, res) => {
           <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
           <p><strong>Turno:</strong> ${turno.noTurno}</p>
           <p><strong>Contraseña:</strong> ${turnoDevoto.contraseñas}</p>
-          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(2)}</p>
+          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(
+            2
+          )}</p>
         </div>
 
         <!-- Frase inspiradora -->
@@ -584,30 +624,31 @@ export const pagarComision = async (req, res) => {
       devoto: {
         nombre: devoto.nombre,
         apellido: devoto.apellido,
-        turnos: devoto.turnos.map(t => ({
+        turnos: devoto.turnos.map((t) => ({
           turnoId: t.turnoId,
           estadoPago: t.estadoPago,
           montoPagado: t.montoPagado || 0,
           saldoPendiente: turno.precio - (t.montoPagado || 0),
-          contraseñas: t.contraseñas
-        }))
+          contraseñas: t.contraseñas,
+        })),
       },
       turno: {
         noTurno: turno.noTurno,
         tipoTurno: turno.tipoTurno,
         precio: turno.precio,
-        procesion: turno.procesion
+        procesion: turno.procesion,
       },
       compraId: compra._id,
       noFactura: compra.noFactura,
       montoPagado,
       montoAcumulado,
-      saldoPendiente
+      saldoPendiente,
     });
-
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Error interno del servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error interno del servidor", details: error.message });
   }
 };
 
@@ -620,8 +661,14 @@ export const pagarOrdinario = async (req, res) => {
       return res.status(401).json({ error: "Usuario no autenticado" });
     }
 
-    if (!contraseña || typeof contraseña !== "string" || contraseña.trim() === "") {
-      return res.status(400).json({ error: "Debe proporcionar una contraseña válida" });
+    if (
+      !contraseña ||
+      typeof contraseña !== "string" ||
+      contraseña.trim() === ""
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Debe proporcionar una contraseña válida" });
     }
 
     const devoto = await Devoto.findById(devotoId);
@@ -631,31 +678,35 @@ export const pagarOrdinario = async (req, res) => {
     if (!turno) return res.status(404).json({ error: "Turno no encontrado" });
 
     if (turno.tipoTurno !== "ORDINARIO") {
-      return res.status(400).json({ error: "Este pago es solo para turnos ORDINARIO" });
+      return res
+        .status(400)
+        .json({ error: "Este pago es solo para turnos ORDINARIO" });
     }
 
     // Verificar disponibilidad
     if (turno.cantidadSinVender <= 0) {
-      return res.status(400).json({ error: "No hay turnos disponibles para vender" });
+      return res
+        .status(400)
+        .json({ error: "No hay turnos disponibles para vender" });
     }
 
     // ===== Descontar =====
     turno.cantidadSinVender -= 1;
-    turno.cantidadVendida  += 1;
+    turno.cantidadVendida += 1;
     await turno.save();
 
     // ===== Buscar turno por contraseña =====
-    let turnoDevoto = devoto.turnos.find(t => t.contraseñas === contraseña);
+    let turnoDevoto = devoto.turnos.find((t) => t.contraseñas === contraseña);
 
     if (turnoDevoto) {
       // ✔ Existe una contraseña igual → solo actualizo turnoId y datos de pago
-      turnoDevoto.turnoId     = turno._id;
-      turnoDevoto.estadoPago  = "PAGADO";
+      turnoDevoto.turnoId = turno._id;
+      turnoDevoto.estadoPago = "PAGADO";
       turnoDevoto.montoPagado = turno.precio;
-      turnoDevoto.ultimoPago  = {
+      turnoDevoto.ultimoPago = {
         fecha: new Date(),
         monto: turno.precio,
-        usuario: usuarioId
+        usuario: usuarioId,
       };
     } else {
       devoto.turnos.push({
@@ -666,8 +717,8 @@ export const pagarOrdinario = async (req, res) => {
         ultimoPago: {
           fecha: new Date(),
           monto: turno.precio,
-          usuario: usuarioId
-        }
+          usuario: usuarioId,
+        },
       });
     }
 
@@ -676,26 +727,30 @@ export const pagarOrdinario = async (req, res) => {
     // ===== Generar factura y crear compra =====
     const procesion = await Procesion.findById(turno.procesion);
     const totalComprasProcesion = await Compra.countDocuments({
-      turno: { $in: await Turno.find({ procesion: procesion._id }).distinct("_id") }
+      turno: {
+        $in: await Turno.find({ procesion: procesion._id }).distinct("_id"),
+      },
     });
 
-    const inicialesProcesion = procesion.nombre.split(" ").map(w => w[0]).join("").toUpperCase();
-    const numeroFactura      = `FAC${inicialesProcesion}${(totalComprasProcesion + 1)
+    const inicialesProcesion = procesion.nombre
+      .split(" ")
+      .map((w) => w[0])
+      .join("")
+      .toUpperCase();
+    const numeroFactura = `FAC${inicialesProcesion}${(totalComprasProcesion + 1)
       .toString()
       .padStart(4, "0")}`;
 
     const compra = new Compra({
-      noFactura:    numeroFactura,
-      devoto:       devotoId,
-      turno:        turnoId,
-      usuario:      usuarioId,
-      contraseña:   contraseña,
-      montoTotal:   turno.precio,
-      montoPagado:  turno.precio,
-      estadoPago:   "PAGADO",
-      pagos: [
-        { fecha: new Date(), monto: turno.precio, usuario: usuarioId }
-      ]
+      noFactura: numeroFactura,
+      devoto: devotoId,
+      turno: turnoId,
+      usuario: usuarioId,
+      contraseña: contraseña,
+      montoTotal: turno.precio,
+      montoPagado: turno.precio,
+      estadoPago: "PAGADO",
+      pagos: [{ fecha: new Date(), monto: turno.precio, usuario: usuarioId }],
     });
 
     await compra.save();
@@ -724,7 +779,9 @@ export const pagarOrdinario = async (req, res) => {
           <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
           <p><strong>Turno:</strong> ${turno.noTurno}</p>
           <p><strong>Contraseña:</strong> ${turnoDevoto.contraseñas}</p>
-          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(2)}</p>
+          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(
+            2
+          )}</p>
         </div>
 
         <!-- Frase inspiradora -->
@@ -754,15 +811,15 @@ export const pagarOrdinario = async (req, res) => {
       mensaje: "Pago de turno ordinario registrado correctamente",
       compra,
       devoto,
-      turno
+      turno,
     });
-
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Error interno del servidor", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Error interno del servidor", details: error.message });
   }
 };
-
 
 export const reservarTurno = async (req, res) => {
   try {
@@ -776,19 +833,27 @@ export const reservarTurno = async (req, res) => {
 
     const devoto = await Devoto.findById(devotoId);
     if (!devoto) return res.status(404).json({ error: "Devoto no encontrado" });
-    const cantidadNecesaria = tipoReserva === "COMPLETO" ? turno.cantidad : turno.cantidad / 2;
+    const cantidadNecesaria =
+      tipoReserva === "COMPLETO" ? turno.cantidad : turno.cantidad / 2;
     if (turno.cantidadSinVender < cantidadNecesaria) {
-      return res.status(400).json({ error: "No hay suficiente cantidad de turnos para reservar" });
+      return res
+        .status(400)
+        .json({ error: "No hay suficiente cantidad de turnos para reservar" });
     }
     const inicialesProcesion = turno.procesion.nombre
       .split(" ")
-      .map(word => word[0].toUpperCase())
+      .map((word) => word[0].toUpperCase())
       .join("");
     const primerNombre = devoto.nombre.split(" ")[0].toUpperCase();
     const contraseña = `${inicialesProcesion}${primerNombre}`;
     const consecutivo = (await Compra.countDocuments()) + 1;
-    const noFactura = `FAC${inicialesProcesion}${String(consecutivo).padStart(5, "0")}`;
-    const montoPagar = (tipoReserva === "COMPLETO" ? turno.cantidad : turno.cantidad / 2) * turno.precio;
+    const noFactura = `FAC${inicialesProcesion}${String(consecutivo).padStart(
+      5,
+      "0"
+    )}`;
+    const montoPagar =
+      (tipoReserva === "COMPLETO" ? turno.cantidad : turno.cantidad / 2) *
+      turno.precio;
     const compra = new Compra({
       noFactura,
       devoto: devotoId,
@@ -798,19 +863,19 @@ export const reservarTurno = async (req, res) => {
       tipoReserva,
       montoTotal: montoPagar,
       montoPagado: montoPagar,
-      estadoPago: "PAGADO"
+      estadoPago: "PAGADO",
     });
     devoto.turnos.push({
       turnoId: turno._id,
       contraseñas: contraseña,
       estadoPago: "PAGADO",
-      montoPagado: montoPagar
+      montoPagado: montoPagar,
     });
     turno.cantidadSinVender -= cantidadNecesaria;
-    turno.cantidadVendida = cantidadNecesaria
+    turno.cantidadVendida = cantidadNecesaria;
 
     await Promise.all([compra.save(), devoto.save(), turno.save()]);
-    
+
     const htmlFactura = `
       <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; border:1px solid #ddd; padding:20px; border-radius:8px; background-color:#f9f9f9;">
         
@@ -835,7 +900,9 @@ export const reservarTurno = async (req, res) => {
           <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
           <p><strong>Turno:</strong> ${turno.noTurno}</p>
           <p><strong>Contraseña:</strong> ${contraseña}</p>
-          <p><strong>Monto Pagado:</strong> Q. ${(montoPagar || 0).toFixed(2)}</p>
+          <p><strong>Monto Pagado:</strong> Q. ${(montoPagar || 0).toFixed(
+            2
+          )}</p>
         </div>
 
         <!-- Frase inspiradora -->
@@ -864,9 +931,8 @@ export const reservarTurno = async (req, res) => {
       success: true,
       compra,
       devoto,
-      message: `Turno reservado como ${tipoReserva}. Monto total: Q${montoPagar}`
+      message: `Turno reservado como ${tipoReserva}. Monto total: Q${montoPagar}`,
     });
-
   } catch (error) {
     res.status(500).json({ error: "Error interno del servidor" });
   }
@@ -884,9 +950,13 @@ export const registrarPago = async (req, res) => {
     if (!devoto) return res.status(404).json({ error: "Devoto no encontrado" });
 
     // Encontrar el turno en el devoto
-    const turnoDevoto = devoto.turnos.find(t => t.turnoId.toString() === compra.turno.toString());
+    const turnoDevoto = devoto.turnos.find(
+      (t) => t.turnoId.toString() === compra.turno.toString()
+    );
     if (!turnoDevoto) {
-      return res.status(404).json({ error: "Turno no encontrado en el devoto" });
+      return res
+        .status(404)
+        .json({ error: "Turno no encontrado en el devoto" });
     }
 
     // Actualizar montos
@@ -895,8 +965,10 @@ export const registrarPago = async (req, res) => {
 
     // Validar que no se pague más del total
     if (nuevoMontoPagado > compra.montoTotal) {
-      return res.status(400).json({ 
-        error: `El monto excede el total. Saldo pendiente: ${compra.montoTotal - compra.montoPagado}` 
+      return res.status(400).json({
+        error: `El monto excede el total. Saldo pendiente: ${
+          compra.montoTotal - compra.montoPagado
+        }`,
       });
     }
 
@@ -904,7 +976,7 @@ export const registrarPago = async (req, res) => {
     let nuevoEstado = "NO_PAGADO";
     if (nuevoMontoPagado >= compra.montoTotal) {
       nuevoEstado = "PAGADO";
-    } else if (nuevoMontoPagado >= (compra.montoTotal / 2)) {
+    } else if (nuevoMontoPagado >= compra.montoTotal / 2) {
       nuevoEstado = "MITAD";
     }
 
@@ -913,7 +985,7 @@ export const registrarPago = async (req, res) => {
     compra.estadoPago = nuevoEstado;
     compra.pagos.push({
       monto,
-      usuario: usuarioId
+      usuario: usuarioId,
     });
 
     // Actualizar devoto
@@ -922,7 +994,7 @@ export const registrarPago = async (req, res) => {
     turnoDevoto.ultimoPago = {
       fecha: new Date(),
       monto,
-      usuario: usuarioId
+      usuario: usuarioId,
     };
 
     await Promise.all([compra.save(), devoto.save()]);
@@ -951,7 +1023,9 @@ export const registrarPago = async (req, res) => {
           <p><strong>Devoto:</strong> ${devoto.nombre} ${devoto.apellido}</p>
           <p><strong>Turno:</strong> ${turno.noTurno}</p>
           <p><strong>Contraseña:</strong> ${nuevaContraseña}</p>
-          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(2)}</p>
+          <p><strong>Monto Pagado:</strong> Q. ${(turno.precio || 0).toFixed(
+            2
+          )}</p>
         </div>
 
         <!-- Frase inspiradora -->
@@ -981,9 +1055,8 @@ export const registrarPago = async (req, res) => {
       compra,
       devoto,
       saldoPendiente,
-      message: `Pago registrado. Estado actual: ${nuevoEstado}`
+      message: `Pago registrado. Estado actual: ${nuevoEstado}`,
     });
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error interno del servidor" });
@@ -994,17 +1067,17 @@ export const generarFacturaPDF = async (req, res) => {
   try {
     const { noFactura } = req.params;
 
-    if (!noFactura || typeof noFactura !== 'string') {
+    if (!noFactura || typeof noFactura !== "string") {
       return res.status(400).json({ error: "Número de factura inválido" });
     }
 
     const factura = await Compra.findOne({ noFactura })
-      .populate('devoto')
+      .populate("devoto")
       .populate({
-        path: 'turno',
-        populate: { path: 'procesion' }
+        path: "turno",
+        populate: { path: "procesion" },
       })
-      .populate('usuario');
+      .populate("usuario");
 
     if (!factura) {
       return res.status(404).json({ error: "Factura no encontrada" });
@@ -1014,62 +1087,70 @@ export const generarFacturaPDF = async (req, res) => {
       return res.status(400).json({ error: "Datos incompletos en la factura" });
     }
 
-    const turnosFiltrados = factura.devoto?.turnos?.filter(t => {
-      try {
-        return t?.turnoId?.toString() === factura.turno?._id?.toString();
-      } catch {
-        return false;
-      }
-    }) || [];
+    const turnosFiltrados =
+      factura.devoto?.turnos?.filter((t) => {
+        try {
+          return t?.turnoId?.toString() === factura.turno?._id?.toString();
+        } catch {
+          return false;
+        }
+      }) || [];
 
-    const contraseña = turnosFiltrados.length > 0
-      ? turnosFiltrados[turnosFiltrados.length - 1]?.contraseñas || ''
-      : '';
+    const contraseña =
+      turnosFiltrados.length > 0
+        ? turnosFiltrados[turnosFiltrados.length - 1]?.contraseñas || ""
+        : "";
 
     // Configuración del documento con tus medidas exactas
     const doc = new PDFDocument({
       size: [600, 612], // Medidas específicas solicitadas
       margin: 20, // Márgenes reducidos para mejor uso del espacio
-      layout: 'portrait',
+      layout: "portrait",
     });
 
-    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
-      'Content-Disposition',
+      "Content-Disposition",
       `attachment; filename=Recibo_${noFactura}.pdf`
     );
 
     doc.pipe(res);
 
     // Colores
-    const darkGray = '#403f3f';
-    const mediumGray = '#6b6a6a';
-    const lightGray = '#f5f5f5';
+    const darkGray = "#403f3f";
+    const mediumGray = "#6b6a6a";
+    const lightGray = "#f5f5f5";
 
     // Fondo blanco
-    doc.rect(0, 0, doc.page.width, doc.page.height).fill('#ffffff');
+    doc.rect(0, 0, doc.page.width, doc.page.height).fill("#ffffff");
 
     // Logo (si existe)
     try {
-      const rutaLogo = path.join(__dirname, 'logo_hermandad.png');
+      const rutaLogo = path.join(__dirname, "logo_hermandad.png");
       if (fs.existsSync(rutaLogo)) {
         doc.image(rutaLogo, 30, 20, { width: 50, height: 50 });
       }
     } catch (imageError) {
-      console.error('Error al cargar imagen:', imageError);
+      console.error("Error al cargar imagen:", imageError);
     }
 
     // Encabezado - Nombre de la procesión
-    const nombreProcesion = factura.turno?.procesion?.nombre?.toUpperCase() || 
-                          'PROCESIÓN NO ESPECIFICADA';
+    const nombreProcesion =
+      factura.turno?.procesion?.nombre?.toUpperCase() ||
+      "PROCESIÓN NO ESPECIFICADA";
 
-    doc.fillColor(darkGray)
-      .font('Helvetica-Bold')
+    doc
+      .fillColor(darkGray)
+      .font("Helvetica-Bold")
       .fontSize(16)
-      .text(nombreProcesion, 90, 30, { width: doc.page.width - 120, align: 'left' });
+      .text(nombreProcesion, 90, 30, {
+        width: doc.page.width - 120,
+        align: "left",
+      });
 
     // Línea divisora
-    doc.moveTo(30, 80)
+    doc
+      .moveTo(30, 80)
       .lineTo(doc.page.width - 30, 80)
       .lineWidth(1)
       .strokeColor(lightGray)
@@ -1077,26 +1158,30 @@ export const generarFacturaPDF = async (req, res) => {
 
     // Información de factura
     const infoY = 90;
-    const fechaFactura = factura.createdAt ? new Date(factura.createdAt) : new Date();
+    const fechaFactura = factura.createdAt
+      ? new Date(factura.createdAt)
+      : new Date();
 
     // Encabezados de información
-    doc.fillColor(mediumGray)
-      .font('Helvetica')
+    doc
+      .fillColor(mediumGray)
+      .font("Helvetica")
       .fontSize(10)
-      .text('NÚMERO:', 30, infoY)
-      .text('FECHA:', 230, infoY)
-      .text('HORA:', 430, infoY);
+      .text("NÚMERO:", 30, infoY)
+      .text("FECHA:", 230, infoY)
+      .text("HORA:", 430, infoY);
 
     // Datos de información
-    doc.fillColor(darkGray)
-      .font('Helvetica-Bold')
+    doc
+      .fillColor(darkGray)
+      .font("Helvetica-Bold")
       .fontSize(11)
-      .text(factura.noFactura || 'N/A', 30, infoY + 15)
-      .text(fechaFactura.toLocaleDateString('es-GT'), 230, infoY + 15)
+      .text(factura.noFactura || "N/A", 30, infoY + 15)
+      .text(fechaFactura.toLocaleDateString("es-GT"), 230, infoY + 15)
       .text(
-        fechaFactura.toLocaleTimeString('es-GT', {
-          hour: '2-digit',
-          minute: '2-digit',
+        fechaFactura.toLocaleTimeString("es-GT", {
+          hour: "2-digit",
+          minute: "2-digit",
         }),
         430,
         infoY + 15
@@ -1106,20 +1191,22 @@ export const generarFacturaPDF = async (req, res) => {
     const devotoY = infoY + 45;
     doc.rect(30, devotoY - 10, doc.page.width - 60, 50).fill(lightGray);
 
-    const nombreCompleto = `${factura.devoto?.nombre || ''} ${
-      factura.devoto?.apellido || ''
+    const nombreCompleto = `${factura.devoto?.nombre || ""} ${
+      factura.devoto?.apellido || ""
     }`.trim();
 
-    doc.fillColor(mediumGray)
-      .font('Helvetica')
+    doc
+      .fillColor(mediumGray)
+      .font("Helvetica")
       .fontSize(10)
-      .text('DEVOTO', 35, devotoY - 5);
+      .text("DEVOTO", 35, devotoY - 5);
 
-    doc.fillColor(darkGray)
-      .font('Helvetica-Bold')
+    doc
+      .fillColor(darkGray)
+      .font("Helvetica-Bold")
       .fontSize(14)
-      .text(nombreCompleto || 'Nombre no disponible', 35, devotoY + 15, {
-        width: doc.page.width - 70
+      .text(nombreCompleto || "Nombre no disponible", 35, devotoY + 15, {
+        width: doc.page.width - 70,
       });
 
     // Detalles de pago
@@ -1127,75 +1214,85 @@ export const generarFacturaPDF = async (req, res) => {
     const colWidth = (doc.page.width - 60) / 3;
 
     // Encabezados de detalles
-    doc.fillColor(mediumGray)
-      .font('Helvetica')
+    doc
+      .fillColor(mediumGray)
+      .font("Helvetica")
       .fontSize(10)
-      .text('CONTRASEÑA', 30, detailsY)
-      .text('TURNO', 30 + colWidth, detailsY)
-      .text('MONTO', 30 + colWidth * 2, detailsY, { align: 'right' });
+      .text("CONTRASEÑA", 30, detailsY)
+      .text("TURNO", 30 + colWidth, detailsY)
+      .text("MONTO", 30 + colWidth * 2, detailsY, { align: "right" });
 
     // Línea divisora
-    doc.moveTo(30, detailsY + 15)
+    doc
+      .moveTo(30, detailsY + 15)
       .lineTo(doc.page.width - 30, detailsY + 15)
       .lineWidth(0.5)
       .strokeColor(lightGray)
       .stroke();
 
     // Datos de detalles
-    doc.fillColor(darkGray)
-      .font('Helvetica-Bold')
+    doc
+      .fillColor(darkGray)
+      .font("Helvetica-Bold")
       .fontSize(12)
       .text(contraseña, 30, detailsY + 25, { width: colWidth })
-      .text(factura.turno?.noTurno || 'N/A', 30 + colWidth, detailsY + 25, { width: colWidth })
+      .text(factura.turno?.noTurno || "N/A", 30 + colWidth, detailsY + 25, {
+        width: colWidth,
+      })
       .text(
-        `Q. ${factura.montoPagado?.toFixed(2) || '0.00'}`,
+        `Q. ${factura.montoPagado?.toFixed(2) || "0.00"}`,
         30 + colWidth * 2,
         detailsY + 25,
-        { width: colWidth, align: 'right' }
+        { width: colWidth, align: "right" }
       );
 
     // Vendedor
     const sellerY = detailsY + 50;
-    doc.fillColor(mediumGray)
-      .font('Helvetica')
+    doc
+      .fillColor(mediumGray)
+      .font("Helvetica")
       .fontSize(9)
-      .text('ATENDIDO POR:', 30, sellerY);
+      .text("ATENDIDO POR:", 30, sellerY);
 
-    doc.fillColor(darkGray)
-      .font('Helvetica-Bold')
+    doc
+      .fillColor(darkGray)
+      .font("Helvetica-Bold")
       .fontSize(11)
-      .text(factura.usuario?.nombre || 'Vendedor no especificado', 30, sellerY + 15);
+      .text(
+        factura.usuario?.nombre || "Vendedor no especificado",
+        30,
+        sellerY + 15
+      );
 
     // Frase final (ajustada más arriba)
     const footerY = sellerY + 60; // Posición más alta que antes
 
-    doc.fillColor(mediumGray)
-      .font('Times-Italic')
+    doc
+      .fillColor(mediumGray)
+      .font("Times-Italic")
       .fontSize(10)
       .text(
-        '«Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»',
+        "«Si conociéramos el valor de la Santa Misa, ¡qué gran esfuerzo haríamos por asistir a ella!»",
         30,
         footerY,
         {
           width: doc.page.width - 60,
-          align: 'center',
+          align: "center",
         }
       );
 
-    doc.font('Times-Roman')
-      .fontSize(9)
-      .text('– San Juan María Vianney', {
-        align: 'center',
-      });
+    doc.font("Times-Roman").fontSize(9).text("– San Juan María Vianney", {
+      align: "center",
+    });
 
     doc.end();
   } catch (error) {
-    console.error('Error al generar factura PDF:', error);
+    console.error("Error al generar factura PDF:", error);
     if (!res.headersSent) {
       res.status(500).json({
-        error: 'Error al generar el recibo en PDF',
+        error: "Error al generar el recibo en PDF",
         details:
-          process.env.NODE_ENV === 'development' ? error.message : undefined,
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   }
