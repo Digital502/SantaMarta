@@ -455,6 +455,80 @@ export const historialVentasPorUsuario = async (req, res) => {
   }
 };
 
+export const ventasPorProcesion = async (req, res) => {
+  try {
+    const { procesionId } = req.params;
+
+    if (!procesionId) {
+      return res.status(400).json({
+        message: "Debe proporcionar el ID de la procesión",
+      });
+    }
+
+    const turnos = await Turno.find({ procesion: procesionId }).select("_id");
+
+    if (!turnos || turnos.length === 0) {
+      return res.status(404).json({
+        message: "No se encontraron turnos asociados a esta procesión",
+      });
+    }
+
+    const turnosIds = turnos.map((t) => t._id);
+
+    const facturas = await Compra.find({
+      turno: { $in: turnosIds },
+      state: true,
+    })
+      .populate({
+        path: "devoto",
+        select: "nombre apellido DPI",
+      })
+      .populate({
+        path: "turno",
+        select: "noTurno tipoTurno precio",
+      })
+      .sort({ fechaFactura: -1 });
+
+    if (!facturas || facturas.length === 0) {
+      return res.status(404).json({
+        message: "No se encontraron facturas para esta procesión",
+      });
+    }
+
+    const totalVendido = facturas.reduce(
+      (acc, f) => acc + (f.montoTotal || 0),
+      0
+    );
+
+    const detalleFacturas = facturas.map((f) => ({
+      noFactura: f.noFactura,
+      fechaFactura: f.fechaFactura,
+      devoto: f.devoto ? `${f.devoto.nombre} ${f.devoto.apellido}` : "N/A",
+      dpi: f.devoto?.DPI || "N/A",
+      turno: f.turno?.noTurno || "N/A",
+      tipoTurno: f.turno?.tipoTurno || "N/A",
+      precio: f.turno?.precio || 0,
+      estadoPago: f.estadoPago,
+      montoTotal: f.montoTotal || 0,
+      montoPagado: f.montoPagado || 0,
+    }));
+
+    res.status(200).json({
+      message: "Ventas por procesión obtenidas correctamente",
+      procesionId,
+      totalFacturas: facturas.length,
+      totalVendido,
+      facturas: detalleFacturas,
+    });
+  } catch (error) {
+    console.error("Error en ventasPorProcesion:", error);
+    res.status(500).json({
+      message: "Error al obtener las ventas por procesión",
+      error: error.message,
+    });
+  }
+};
+
 export const pagarComision = async (req, res) => {
   try {
     const usuarioId = req.usuario._id;

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { validateLogin, validateLoginRoles } from "../middlewares/auth-validate.js";
-import { crearCompra, editarFactura, eliminarFactura, getFacturaById, historialVentasPorUsuario, listFacturas, pagarComision, reservarTurno, registrarPago, generarFacturaPDF, pagarOrdinario } from "./compra.controller.js";
+import { crearCompra, editarFactura, eliminarFactura, getFacturaById, historialVentasPorUsuario, listFacturas, pagarComision, reservarTurno, registrarPago, generarFacturaPDF, pagarOrdinario, ventasPorProcesion } from "./compra.controller.js";
 
 const router = Router();
 
@@ -25,5 +25,7 @@ router.put("/registrarPago", validateLogin, registrarPago  )
 router.get("/generarFacturaPDF/:noFactura", validateLoginRoles, generarFacturaPDF);
 
 router.post("/pagoOrdinario", validateLoginRoles, pagarOrdinario)
+
+router.get("/ventasPorProcesion/:procesionId", validateLoginRoles, ventasPorProcesion);
 
 export default router;
