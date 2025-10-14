@@ -1082,7 +1082,7 @@ export const registrarPago = async (req, res) => {
         </div>
 
         <!-- Encabezado principal -->
-        <h1 style="color: #403f3f; text-align:center; margin-bottom:5px;">Pago de Turno 2026 - ${
+        <h1 style="color: #403f3f; text-align:center; margin-bottom:5px;">Pago de Turno - ${
           procesion.nombre
         }</h1>
         <h3 style="color:#59818B; text-align:center; margin-top:0; font-weight:normal;">
