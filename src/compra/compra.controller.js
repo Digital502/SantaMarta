@@ -8,6 +8,7 @@ import fs from "fs";
 import blobStream from "blob-stream";
 import { fileURLToPath } from "url";
 import sgMail from "@sendgrid/mail";
+import { enviarFactura } from "../helpers/sentEmailPago.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -211,12 +212,7 @@ export const crearCompra = async (req, res) => {
   </div>
     `;
     if (devoto.email) {
-      await sgMail.send({
-        to: devoto.email,
-        from: "hermandadsantamartazona3@gmail.com",
-        subject: `Pago de Turno - ${procesion.nombre}`,
-        html: htmlFactura,
-      });
+      await enviarFactura(devoto.email, `Pago de Turno - ${procesion.nombre}`, htmlFactura);
     }
 
     res.status(201).json({
@@ -684,12 +680,7 @@ export const pagarComision = async (req, res) => {
       </div>
     `;
     if (devoto.email) {
-      await sgMail.send({
-        to: devoto.email,
-        from: "hermandadsantamartazona3@gmail.com",
-        subject: `Pago de Turno - ${procesion.nombre}`,
-        html: htmlFactura,
-      });
+      await enviarFactura(devoto.email, `Pago de Turno - ${procesion.nombre}`, htmlFactura);
     }
 
     res.status(200).json({
@@ -872,12 +863,7 @@ export const pagarOrdinario = async (req, res) => {
       </div>
     `;
     if (devoto.email) {
-      await sgMail.send({
-        to: devoto.email,
-        from: "hermandadsantamartazona3@gmail.com",
-        subject: `Pago de Turno - ${procesion.nombre}`,
-        html: htmlFactura,
-      });
+      await enviarFactura(devoto.email, `Pago de Turno - ${procesion.nombre}`, htmlFactura);
     }
 
     res.status(201).json({
@@ -993,12 +979,7 @@ export const reservarTurno = async (req, res) => {
       </div>
     `;
     if (devoto.email) {
-      await sgMail.send({
-        to: devoto.email,
-        from: "hermandadsantamartazona3@gmail.com",
-        subject: `Pago de Turno - ${turno.procesion.nombre}`,
-        html: htmlFactura,
-      });
+      await enviarFactura(devoto.email, `Pago de Turno - ${procesion.nombre}`, htmlFactura);
     }
 
     res.status(201).json({
