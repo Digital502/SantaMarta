@@ -124,49 +124,27 @@ export const deleteTurno = async (req, res) => {
 
 export const getTurnosByProcesionId = async (req, res) => {
   try {
-    const { procesionId } = req.params;
+    const { procesionId } = req.params
 
-    const turnos = await Turno.aggregate([
-      { $match: { procesion: new mongoose.Types.ObjectId(procesionId), state: true } },
-      {
-        $addFields: {
-          numeroTurnoInt: {
-            $cond: {
-              if: { $regexMatch: { input: "$numeroTurno", regex: /^[0-9]+$/ } },
-              then: { $toInt: "$numeroTurno" },
-              else: null
-            }
-          }
-        }
-      },
-      {
-        $sort: {
-          numeroTurnoInt: 1,   // primero los que tienen número
-          createdAt: 1         // luego por fecha de creación
-        }
-      }
-    ]);
-
-    // Reaplicamos el populate manualmente
-    await Turno.populate(turnos, { path: "procesion", select: "nombre" });
-
+    const turnos = await Turno.find({ procesion: procesionId, state: true }).populate('procesion', 'nombre').sort({ createdAt: 1 });
+    
     if (turnos.length > 0) {
       return res.status(200).json({
         message: "Turnos retrieved successfully by procesion",
         turnos
-      });
+      })
     }
 
     return res.status(404).json({
       message: "No turnos found for this procesion",
-    });
+    })
   } catch (err) {
     return res.status(500).json({
       message: "Error retrieving turnos by procesion",
       error: err.message
-    });
+    })
   }
-};
+}
 
 export const downloadTurnosPdf = async (req, res) => {
   try {
