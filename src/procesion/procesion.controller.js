@@ -47,7 +47,6 @@ export const getProcesiones = async (req, res) => {
     }
 }
 
-
 export const getProcesionById = async (req, res) => {
     try{
         const { id } = req.params;

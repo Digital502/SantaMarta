@@ -126,8 +126,8 @@ export const getTurnosByProcesionId = async (req, res) => {
   try {
     const { procesionId } = req.params
 
-    const turnos = await Turno.find({ procesion: procesionId, state: true }).populate('procesion', 'nombre')
-
+    const turnos = await Turno.find({ procesion: procesionId, state: true }).populate('procesion', 'nombre').sort({ numeroTurno: 1 });
+    
     if (turnos.length > 0) {
       return res.status(200).json({
         message: "Turnos retrieved successfully by procesion",
